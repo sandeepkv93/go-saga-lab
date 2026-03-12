@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: go-saga-lab-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-go_saga_lab}
+      POSTGRES_USER: ${POSTGRES_USER:-go_saga_lab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-go_saga_lab}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-go_saga_lab} -d ${POSTGRES_DB:-go_saga_lab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.122.1
+    container_name: go-saga-lab-otel
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deployments/otel/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+
+volumes:
+  postgres-data:
