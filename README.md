@@ -1,64 +1,266 @@
 # go-saga-lab
 
-`go-saga-lab` is a production-style saga orchestration reference in Go. The initial scaffold focuses on deterministic state transitions, local-first developer workflow, and a clear path toward persistence, outbox delivery, and observability.
+A Go project that combines:
+- saga lifecycle orchestration with explicit state transitions
+- PostgreSQL-backed saga persistence with built-in SQL migrations
+- durable outbox writes for saga creation events
+- an in-memory development mode for zero-setup local runs
+- a reusable outbox dispatcher that marks events `published` or `failed`
 
-## Current Scope
-- Repository bootstrap and local development ergonomics
-- Initial saga domain model and transition rules
-- Postgres repository boundary and first migration set
-- Runtime service that drives lifecycle transitions through the state machine
-- Table-driven tests for legal and illegal transitions
-- Compose stack for Postgres and telemetry collector
+## Flow Diagram
 
-## Quickstart
-1. Copy `.env.example` to `.env` if you want local overrides.
-2. Start dependencies with `make up`.
-3. Apply migrations with your preferred tool against the SQL in `migrations/`.
-4. Run tests with `make test`.
-5. Start the API placeholder with `make run-api`.
-
-## Repository Layout
-```text
-cmd/
-  api/
-internal/
-  domain/
-  orchestrator/statemachine/
-deployments/
-  docker/
-docs/
-  adr/
-  runbooks/
-migrations/
-tests/
-web/
+```mermaid
+flowchart LR
+    C[Client] -->|POST /v1/sagas| API[Go HTTP API]
+    API -->|Create saga status=created| S[Saga Repository]
+    S -->|Atomic write| DB[(PostgreSQL)]
+    S -->|Insert saga.created event| O[(Outbox)]
+    C -->|POST /v1/sagas/:id/start| API
+    API -->|Transition created -> running| R[Runtime Service]
+    R -->|Persist status update| S
+    C -->|POST /v1/sagas/:id/step-result| API
+    API -->|Transition running -> completed or compensating| R
+    C -->|POST /v1/sagas/:id/compensation-result| API
+    API -->|Transition compensating -> cancelled or failed| R
+    D[Outbox Dispatcher] -->|Load pending events| O
+    D -->|Publish event| P[Publisher Interface]
+    D -->|Mark published or failed| O
+    C -->|GET /v1/sagas/:id| API
+    API -->|Read latest saga state| S
+    API -->|Return JSON state| C
 ```
 
-## Current Commands
-- `make test`: run the Go test suite
-- `make fmt`: format Go code
-- `make run-api`: start the placeholder API process
-- `make up`: start local dependencies
-- `make down`: stop local dependencies
+## Component Diagram
 
-## API Status
-- Default backend is in-memory for zero-setup local runs.
-- Set `DATABASE_URL` or `STORAGE_BACKEND=postgres` to switch the binary to Postgres.
-- On Postgres startup, the binary pings the database and applies `*.up.sql` files from `MIGRATIONS_DIR` (default: `migrations`).
-- Saga creation now emits a `saga.created` outbox event. On Postgres this write is atomic with saga persistence.
-- The `internal/outbox` package now includes a dispatcher that marks pending events as `published` or `failed`.
-- Available lifecycle endpoints:
-- `POST /v1/sagas`
-- `GET /v1/sagas/{id}`
-- `POST /v1/sagas/{id}/start`
-- `POST /v1/sagas/{id}/cancel`
-- `POST /v1/sagas/{id}/step-result`
-- `POST /v1/sagas/{id}/compensation-result`
+```mermaid
+flowchart TB
+    subgraph App
+        API[cmd/api]
+        HTTP[internal/api/httpapi]
+        RT[internal/orchestrator/runtime]
+        SM[internal/orchestrator/statemachine]
+        OB[internal/outbox]
+    end
 
-## Near-Term Build Order
-1. Implement orchestration runtime with retries and compensation.
-2. Add lifecycle APIs and reference saga scenarios.
-3. Wire telemetry and dashboards.
-4. Add outbox publisher and replay flow.
+    subgraph Storage
+        MEM[internal/store/memory]
+        PG[internal/store/postgres]
+        SQL[(PostgreSQL)]
+        OUT[(outbox_events)]
+    end
 
-See [PRD.md](/home/dev/workspace/go-saga-lab/PRD.md) and [PLAN.md](/home/dev/workspace/go-saga-lab/PLAN.md) for full product definition and execution sequencing.
+    API --> HTTP
+    HTTP --> RT
+    HTTP --> MEM
+    HTTP --> PG
+    RT --> SM
+    RT --> MEM
+    RT --> PG
+    PG --> SQL
+    PG --> OUT
+    OB --> MEM
+    OB --> PG
+```
+
+## Why this example is interesting
+
+The project focuses on the hard edges that most saga examples skip:
+- deterministic state transitions with illegal-transition rejection
+- local-first development mode without forcing infrastructure on day one
+- PostgreSQL startup checks with automatic `*.up.sql` migration application
+- durable outbox capture for `saga.created`
+- a dispatcher abstraction that can advance outbox state independently from API handling
+
+This makes the repo useful as both a learning reference and a bootstrap for a more production-like orchestration service.
+
+## Current scope
+
+Implemented now:
+- saga create, get, start, cancel, step-result, and compensation-result endpoints
+- in-memory and PostgreSQL-backed repositories
+- built-in migration runner for PostgreSQL startup
+- atomic saga + outbox write on creation for Postgres
+- outbox dispatcher library with success/failure status updates
+
+Not implemented yet:
+- background publisher process
+- retry backoff scheduling for failed outbox rows
+- worker lease model, timeout engine, or concurrent step execution
+- telemetry dashboards and trace propagation
+
+## Project structure
+
+- `cmd/api`: HTTP process entrypoint
+- `internal/api/httpapi`: request handlers and route wiring
+- `internal/config`: environment-driven configuration
+- `internal/domain`: saga and outbox domain types
+- `internal/orchestrator/runtime`: lifecycle transition coordinator
+- `internal/orchestrator/statemachine`: legal state transition table
+- `internal/outbox`: dispatcher and publisher contract
+- `internal/store/memory`: in-memory repository for local runs and tests
+- `internal/store/postgres`: PostgreSQL repository, migrations, and startup migration runner
+- `migrations`: SQL schema files applied on Postgres startup
+
+## Run locally (memory mode)
+
+```bash
+go run ./cmd/api
+```
+
+Default behavior:
+- storage backend is `memory`
+- no external services are required
+- HTTP server listens on `:8080` unless `PORT` is set
+
+## Run with PostgreSQL
+
+1. Start dependencies:
+
+```bash
+docker compose up -d postgres
+```
+
+2. Run the API with Postgres enabled:
+
+```bash
+DATABASE_URL='postgres://go_saga_lab:go_saga_lab@localhost:5432/go_saga_lab?sslmode=disable' \
+STORAGE_BACKEND=postgres \
+go run ./cmd/api
+```
+
+Postgres startup behavior:
+- the app pings the database before serving traffic
+- the app applies all `*.up.sql` files from `MIGRATIONS_DIR` (default `migrations`)
+- saga creation writes `saga_instances` and `outbox_events` in one transaction
+
+## Storage mode matrix
+
+| `STORAGE_BACKEND` | Saga persistence | Outbox persistence | Intended usage |
+|---|---|---|---|
+| `memory` | in-process map | in-process slice | local development, tests, quick demos |
+| `postgres` | PostgreSQL | PostgreSQL `outbox_events` table | durable local/dev or production-like setup |
+
+Backend selection behavior:
+- if `DATABASE_URL` is set and `STORAGE_BACKEND` is unset, the app promotes to `postgres`
+- otherwise the default remains `memory`
+
+## API usage
+
+Create a saga:
+
+```bash
+curl -sS -X POST http://localhost:8080/v1/sagas \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "template_id": "order-flow",
+    "idempotency_key": "idem-1001",
+    "input": {
+      "order_id": "order-1001",
+      "customer_id": "cust-42"
+    }
+  }'
+```
+
+Start the saga:
+
+```bash
+curl -sS -X POST http://localhost:8080/v1/sagas/<saga_id>/start
+```
+
+Report a successful forward step:
+
+```bash
+curl -sS -X POST http://localhost:8080/v1/sagas/<saga_id>/step-result \
+  -H 'Content-Type: application/json' \
+  -d '{"succeeded": true}'
+```
+
+Report a failed forward step:
+
+```bash
+curl -sS -X POST http://localhost:8080/v1/sagas/<saga_id>/step-result \
+  -H 'Content-Type: application/json' \
+  -d '{"succeeded": false}'
+```
+
+Finish compensation:
+
+```bash
+curl -sS -X POST http://localhost:8080/v1/sagas/<saga_id>/compensation-result \
+  -H 'Content-Type: application/json' \
+  -d '{"succeeded": true}'
+```
+
+Fetch current saga state:
+
+```bash
+curl -sS http://localhost:8080/v1/sagas/<saga_id>
+```
+
+Health check:
+
+```bash
+curl -sS http://localhost:8080/healthz
+```
+
+## Lifecycle walkthrough
+
+Happy path:
+- `created`
+- `running`
+- `completed`
+
+Compensation path:
+- `created`
+- `running`
+- `compensating`
+- `cancelled` or `failed`
+
+Current transition triggers:
+- `start`
+- `cancel`
+- `step-result` with `succeeded=true|false`
+- `compensation-result` with `succeeded=true|false`
+
+## Outbox behavior
+
+Current outbox event flow:
+- saga creation emits `saga.created`
+- repository stores the event with status `pending`
+- dispatcher loads pending events and invokes a publisher implementation
+- successful publish marks the row `published`
+- failed publish marks the row `failed` and increments attempt count
+
+Current limitation:
+- there is no long-running publisher process yet
+- failed events do not yet store failure reason or retry schedule
+
+## Environment variables
+
+- `PORT` (default `8080`)
+- `STORAGE_BACKEND` (`memory|postgres`, default `memory`)
+- `DATABASE_URL` (optional; enables Postgres when set)
+- `MIGRATIONS_DIR` (default `migrations`)
+
+## Troubleshooting
+
+- API starts but sagas disappear after restart:
+  - you are in `memory` mode; use `DATABASE_URL` or `STORAGE_BACKEND=postgres` for durable state
+- Postgres mode fails during startup:
+  - verify `DATABASE_URL` connectivity and confirm the target database exists
+- Saga create works but no outbox rows are published:
+  - expected today; the dispatcher exists as a library but no background publisher process has been wired yet
+- `409 Conflict` on lifecycle endpoint:
+  - the requested transition is illegal for the current saga state
+
+## Quality checks
+
+```bash
+go test ./...
+go run ./cmd/api
+```
+
+## Planning docs
+
+- [PRD.md](/home/dev/workspace/go-saga-lab/PRD.md)
+- [PLAN.md](/home/dev/workspace/go-saga-lab/PLAN.md)
