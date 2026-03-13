@@ -5,7 +5,7 @@ A Go project that combines:
 - PostgreSQL-backed saga persistence with built-in SQL migrations
 - durable outbox writes for saga creation events
 - an in-memory development mode for zero-setup local runs
-- a reusable outbox dispatcher that marks events `published` or `failed`
+- a reusable outbox dispatcher and publisher process for draining pending events
 
 ## Flow Diagram
 
@@ -22,7 +22,8 @@ flowchart LR
     API -->|Transition running -> completed or compensating| R
     C -->|POST /v1/sagas/:id/compensation-result| API
     API -->|Transition compensating -> cancelled or failed| R
-    D[Outbox Dispatcher] -->|Load pending events| O
+    PUB[cmd/publisher] -->|Poll pending events| D[Outbox Dispatcher]
+    D -->|Load pending events| O
     D -->|Publish event| P[Publisher Interface]
     D -->|Mark published or failed| O
     C -->|GET /v1/sagas/:id| API
@@ -36,6 +37,7 @@ flowchart LR
 flowchart TB
     subgraph App
         API[cmd/api]
+        PUB[cmd/publisher]
         HTTP[internal/api/httpapi]
         RT[internal/orchestrator/runtime]
         SM[internal/orchestrator/statemachine]
@@ -50,6 +52,7 @@ flowchart TB
     end
 
     API --> HTTP
+    PUB --> OB
     HTTP --> RT
     HTTP --> MEM
     HTTP --> PG
@@ -80,10 +83,9 @@ Implemented now:
 - in-memory and PostgreSQL-backed repositories
 - built-in migration runner for PostgreSQL startup
 - atomic saga + outbox write on creation for Postgres
-- outbox dispatcher library with success/failure status updates
+- outbox dispatcher and publisher process with success/failure status updates
 
 Not implemented yet:
-- background publisher process
 - retry backoff scheduling for failed outbox rows
 - worker lease model, timeout engine, or concurrent step execution
 - telemetry dashboards and trace propagation
@@ -91,6 +93,7 @@ Not implemented yet:
 ## Project structure
 
 - `cmd/api`: HTTP process entrypoint
+- `cmd/publisher`: polling outbox publisher process
 - `internal/api/httpapi`: request handlers and route wiring
 - `internal/config`: environment-driven configuration
 - `internal/domain`: saga and outbox domain types
@@ -111,6 +114,12 @@ Default behavior:
 - storage backend is `memory`
 - no external services are required
 - HTTP server listens on `:8080` unless `PORT` is set
+
+Run the publisher once against the selected backend:
+
+```bash
+PUBLISHER_RUN_ONCE=true go run ./cmd/publisher
+```
 
 ## Run with PostgreSQL
 
@@ -227,13 +236,25 @@ Current transition triggers:
 Current outbox event flow:
 - saga creation emits `saga.created`
 - repository stores the event with status `pending`
+- `cmd/publisher` runs the dispatcher loop
 - dispatcher loads pending events and invokes a publisher implementation
 - successful publish marks the row `published`
 - failed publish marks the row `failed` and increments attempt count
 
+Current publisher backends:
+- `log`: emits publish events to process logs
+- `rabbitmq`: publishes JSON messages to the configured RabbitMQ exchange
+
 Current limitation:
-- there is no long-running publisher process yet
 - failed events do not yet store failure reason or retry schedule
+- there is no delayed retry/backoff worker for failed rows
+
+## Publisher transport variables
+
+- `PUBLISHER_BACKEND` (`log|rabbitmq`, default `log`)
+- `AMQP_URL` (default `amqp://guest:guest@localhost:5672/`)
+- `AMQP_EXCHANGE` (default `go_saga_lab.events`)
+- `AMQP_ROUTING_KEY_PREFIX` (default `saga`)
 
 ## Environment variables
 
@@ -241,6 +262,8 @@ Current limitation:
 - `STORAGE_BACKEND` (`memory|postgres`, default `memory`)
 - `DATABASE_URL` (optional; enables Postgres when set)
 - `MIGRATIONS_DIR` (default `migrations`)
+- `PUBLISHER_POLL_INTERVAL_MS` (default `2000`)
+- `PUBLISHER_RUN_ONCE` (default `false`)
 
 ## Troubleshooting
 
@@ -249,7 +272,9 @@ Current limitation:
 - Postgres mode fails during startup:
   - verify `DATABASE_URL` connectivity and confirm the target database exists
 - Saga create works but no outbox rows are published:
-  - expected today; the dispatcher exists as a library but no background publisher process has been wired yet
+  - verify `cmd/publisher` is running against the same backend and storage configuration
+- RabbitMQ publisher fails on startup:
+  - verify `AMQP_URL`, exchange configuration, and broker reachability
 - `409 Conflict` on lifecycle endpoint:
   - the requested transition is illegal for the current saga state
 

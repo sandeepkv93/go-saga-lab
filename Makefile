@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: test fmt run-api up down
+.PHONY: test fmt run-api run-publisher up down
 
 test:
 	$(GO) test ./...
@@ -10,6 +10,9 @@ fmt:
 
 run-api:
 	$(GO) run ./cmd/api
+
+run-publisher:
+	$(GO) run ./cmd/publisher
 
 up:
 	docker compose up -d
