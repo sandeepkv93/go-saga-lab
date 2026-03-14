@@ -61,7 +61,13 @@ func buildPublisher(cfg config.Config) (outbox.Publisher, func() error, error) {
 	case "log":
 		return &outbox.LogPublisher{}, nil, nil
 	case "rabbitmq":
-		publisher, err := outbox.NewRabbitMQPublisher(cfg.AMQPURL, cfg.AMQPExchange, cfg.AMQPRoutingKeyPrefix)
+		publisher, err := outbox.NewRabbitMQPublisher(
+			cfg.AMQPURL,
+			cfg.AMQPExchange,
+			cfg.AMQPExchangeType,
+			cfg.AMQPQueue,
+			cfg.AMQPRoutingKeyPrefix,
+		)
 		if err != nil {
 			return nil, nil, err
 		}

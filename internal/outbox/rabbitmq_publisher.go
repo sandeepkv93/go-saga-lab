@@ -11,6 +11,9 @@ import (
 )
 
 type amqpChannel interface {
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
 	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 	Close() error
 }
@@ -36,10 +39,12 @@ type RabbitMQPublisher struct {
 	connection       amqpConnection
 	channel          amqpChannel
 	exchange         string
+	exchangeType     string
+	queue            string
 	routingKeyPrefix string
 }
 
-func NewRabbitMQPublisher(amqpURL, exchange, routingKeyPrefix string) (*RabbitMQPublisher, error) {
+func NewRabbitMQPublisher(amqpURL, exchange, exchangeType, queue, routingKeyPrefix string) (*RabbitMQPublisher, error) {
 	conn, err := amqp.Dial(amqpURL)
 	if err != nil {
 		return nil, fmt.Errorf("dial rabbitmq: %w", err)
@@ -51,10 +56,10 @@ func NewRabbitMQPublisher(amqpURL, exchange, routingKeyPrefix string) (*RabbitMQ
 		return nil, fmt.Errorf("open rabbitmq channel: %w", err)
 	}
 
-	return newRabbitMQPublisherFromConnection(&rabbitMQConnection{conn: conn}, channel, exchange, routingKeyPrefix)
+	return newRabbitMQPublisherFromConnection(&rabbitMQConnection{conn: conn}, channel, exchange, exchangeType, queue, routingKeyPrefix)
 }
 
-func newRabbitMQPublisherFromConnection(connection amqpConnection, channel amqpChannel, exchange, routingKeyPrefix string) (*RabbitMQPublisher, error) {
+func newRabbitMQPublisherFromConnection(connection amqpConnection, channel amqpChannel, exchange, exchangeType, queue, routingKeyPrefix string) (*RabbitMQPublisher, error) {
 	if connection == nil {
 		return nil, fmt.Errorf("connection is required")
 	}
@@ -64,16 +69,30 @@ func newRabbitMQPublisherFromConnection(connection amqpConnection, channel amqpC
 	if exchange == "" {
 		return nil, fmt.Errorf("exchange is required")
 	}
+	if exchangeType == "" {
+		return nil, fmt.Errorf("exchange type is required")
+	}
+	if queue == "" {
+		return nil, fmt.Errorf("queue is required")
+	}
 	if routingKeyPrefix == "" {
 		return nil, fmt.Errorf("routing key prefix is required")
 	}
 
-	return &RabbitMQPublisher{
+	publisher := &RabbitMQPublisher{
 		connection:       connection,
 		channel:          channel,
 		exchange:         exchange,
+		exchangeType:     exchangeType,
+		queue:            queue,
 		routingKeyPrefix: routingKeyPrefix,
-	}, nil
+	}
+
+	if err := publisher.ensureTopology(); err != nil {
+		return nil, err
+	}
+
+	return publisher, nil
 }
 
 func (p *RabbitMQPublisher) Publish(ctx context.Context, event domain.OutboxEvent) error {
@@ -122,4 +141,19 @@ func (p *RabbitMQPublisher) Close() error {
 		}
 	}
 	return closeErr
+}
+
+func (p *RabbitMQPublisher) ensureTopology() error {
+	if err := p.channel.ExchangeDeclare(p.exchange, p.exchangeType, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("declare exchange: %w", err)
+	}
+	if _, err := p.channel.QueueDeclare(p.queue, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("declare queue: %w", err)
+	}
+	bindingKey := fmt.Sprintf("%s.*", p.routingKeyPrefix)
+	if err := p.channel.QueueBind(p.queue, bindingKey, p.exchange, false, nil); err != nil {
+		return fmt.Errorf("bind queue: %w", err)
+	}
+
+	return nil
 }

@@ -16,6 +16,8 @@ type Config struct {
 	PublisherBackend      string
 	AMQPURL               string
 	AMQPExchange          string
+	AMQPExchangeType      string
+	AMQPQueue             string
 	AMQPRoutingKeyPrefix  string
 }
 
@@ -30,6 +32,8 @@ func Load() Config {
 		PublisherBackend:      getEnv("PUBLISHER_BACKEND", "log"),
 		AMQPURL:               getEnv("AMQP_URL", "amqp://guest:guest@localhost:5672/"),
 		AMQPExchange:          getEnv("AMQP_EXCHANGE", "go_saga_lab.events"),
+		AMQPExchangeType:      getEnv("AMQP_EXCHANGE_TYPE", "topic"),
+		AMQPQueue:             getEnv("AMQP_QUEUE", "go_saga_lab.events.demo"),
 		AMQPRoutingKeyPrefix:  getEnv("AMQP_ROUTING_KEY_PREFIX", "saga"),
 	}
 

@@ -243,7 +243,7 @@ Current outbox event flow:
 
 Current publisher backends:
 - `log`: emits publish events to process logs
-- `rabbitmq`: publishes JSON messages to the configured RabbitMQ exchange
+- `rabbitmq`: declares exchange + demo queue binding and publishes JSON messages to the configured exchange
 
 Current limitation:
 - failed events do not yet store failure reason or retry schedule
@@ -254,6 +254,8 @@ Current limitation:
 - `PUBLISHER_BACKEND` (`log|rabbitmq`, default `log`)
 - `AMQP_URL` (default `amqp://guest:guest@localhost:5672/`)
 - `AMQP_EXCHANGE` (default `go_saga_lab.events`)
+- `AMQP_EXCHANGE_TYPE` (default `topic`)
+- `AMQP_QUEUE` (default `go_saga_lab.events.demo`)
 - `AMQP_ROUTING_KEY_PREFIX` (default `saga`)
 
 ## Environment variables
@@ -284,8 +286,3 @@ Current limitation:
 go test ./...
 go run ./cmd/api
 ```
-
-## Planning docs
-
-- [PRD.md](/home/dev/workspace/go-saga-lab/PRD.md)
-- [PLAN.md](/home/dev/workspace/go-saga-lab/PLAN.md)
