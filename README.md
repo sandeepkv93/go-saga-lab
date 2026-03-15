@@ -86,7 +86,6 @@ Implemented now:
 - outbox dispatcher and publisher process with success/failure status updates
 
 Not implemented yet:
-- retry backoff scheduling for failed outbox rows
 - worker lease model, timeout engine, or concurrent step execution
 - telemetry dashboards and trace propagation
 
@@ -237,7 +236,7 @@ Current outbox event flow:
 - saga creation emits `saga.created`
 - repository stores the event with status `pending`
 - `cmd/publisher` runs the dispatcher loop
-- dispatcher loads pending events and invokes a publisher implementation
+- dispatcher claims eligible events with a lease owner and lease TTL, then invokes a publisher implementation
 - successful publish marks the row `published`
 - failed publish marks the row `failed`, increments attempt count, and schedules `next_attempt_at` with exponential backoff
 
@@ -247,7 +246,7 @@ Current publisher backends:
 
 Current limitation:
 - failed events do not yet store failure reason
-- there is no lease-based publisher coordination for multi-instance dispatch
+- there is no heartbeat or lease renewal flow for long-running publish attempts
 
 ## Publisher transport variables
 
@@ -267,6 +266,8 @@ Current limitation:
 - `PUBLISHER_POLL_INTERVAL_MS` (default `2000`)
 - `PUBLISHER_RETRY_BASE_MS` (default `1000`)
 - `PUBLISHER_RETRY_MAX_MS` (default `30000`)
+- `PUBLISHER_LEASE_TTL_MS` (default `10000`)
+- `PUBLISHER_LEASE_OWNER` (default hostname-based value)
 - `PUBLISHER_RUN_ONCE` (default `false`)
 
 ## Troubleshooting

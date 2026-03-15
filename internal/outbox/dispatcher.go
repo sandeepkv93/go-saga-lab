@@ -18,9 +18,11 @@ type Dispatcher struct {
 	publisher  Publisher
 	retryBase  time.Duration
 	retryMax   time.Duration
+	leaseOwner string
+	leaseTTL   time.Duration
 }
 
-func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, retryBase, retryMax time.Duration) (*Dispatcher, error) {
+func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, retryBase, retryMax time.Duration, leaseOwner string, leaseTTL time.Duration) (*Dispatcher, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("repository is required")
 	}
@@ -33,20 +35,28 @@ func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, r
 	if retryMax < retryBase {
 		return nil, fmt.Errorf("retry max delay must be greater than or equal to retry base delay")
 	}
+	if leaseOwner == "" {
+		return nil, fmt.Errorf("lease owner is required")
+	}
+	if leaseTTL <= 0 {
+		return nil, fmt.Errorf("lease TTL must be positive")
+	}
 
 	return &Dispatcher{
 		repository: repository,
 		publisher:  publisher,
 		retryBase:  retryBase,
 		retryMax:   retryMax,
+		leaseOwner: leaseOwner,
+		leaseTTL:   leaseTTL,
 	}, nil
 }
 
 func (d *Dispatcher) DispatchPending(ctx context.Context) (int, error) {
 	now := time.Now().UTC()
-	events, err := d.repository.ListDispatchableOutboxEvents(ctx, now)
+	events, err := d.repository.ClaimDispatchableOutboxEvents(ctx, now, d.leaseOwner, now.Add(d.leaseTTL), 100)
 	if err != nil {
-		return 0, fmt.Errorf("list dispatchable outbox events: %w", err)
+		return 0, fmt.Errorf("claim dispatchable outbox events: %w", err)
 	}
 
 	dispatched := 0
@@ -54,13 +64,13 @@ func (d *Dispatcher) DispatchPending(ctx context.Context) (int, error) {
 		nextAttempts := event.Attempts + 1
 		if err := d.publisher.Publish(ctx, event); err != nil {
 			nextAttemptAt := d.nextRetryAt(now, nextAttempts)
-			if markErr := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "failed", nextAttempts, &nextAttemptAt); markErr != nil {
+			if markErr := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "failed", nextAttempts, &nextAttemptAt, d.leaseOwner); markErr != nil {
 				return dispatched, fmt.Errorf("schedule failed outbox event retry: %w", markErr)
 			}
 			continue
 		}
 
-		if err := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "published", nextAttempts, nil); err != nil {
+		if err := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "published", nextAttempts, nil, d.leaseOwner); err != nil {
 			return dispatched, fmt.Errorf("mark published outbox event: %w", err)
 		}
 		dispatched++

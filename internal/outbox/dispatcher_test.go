@@ -52,7 +52,7 @@ func TestDispatcherPublishesPendingEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{}
-	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second)
+	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -65,9 +65,9 @@ func TestDispatcherPublishesPendingEvents(t *testing.T) {
 		t.Fatalf("DispatchPending() = %d, want %d", dispatched, 1)
 	}
 
-	events, err := repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC())
+	events, err := repo.ClaimDispatchableOutboxEvents(context.Background(), time.Now().UTC(), "publisher-b", time.Now().UTC().Add(time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) != 0 {
 		t.Fatalf("len(events) = %d, want 0", len(events))
@@ -103,7 +103,7 @@ func TestDispatcherMarksFailedEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{failDedupeKey: event.DedupeKey}
-	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second)
+	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", 200*time.Millisecond)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -116,19 +116,33 @@ func TestDispatcherMarksFailedEvents(t *testing.T) {
 		t.Fatalf("DispatchPending() = %d, want %d", dispatched, 0)
 	}
 
-	events, err := repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC())
+	events, err := repo.ClaimDispatchableOutboxEvents(context.Background(), time.Now().UTC(), "publisher-b", time.Now().UTC().Add(time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) != 0 {
 		t.Fatalf("len(events) = %d, want 0 because failed events should not be immediately dispatchable", len(events))
 	}
 
-	events, err = repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC().Add(time.Second))
+	events, err = repo.ClaimDispatchableOutboxEvents(context.Background(), time.Now().UTC().Add(time.Second), "publisher-b", time.Now().UTC().Add(2*time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() after delay error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() after delay error = %v", err)
 	}
 	if len(events) != 1 {
 		t.Fatalf("len(events) after delay = %d, want 1", len(events))
+	}
+}
+
+func TestDispatcherRequiresLeaseSettings(t *testing.T) {
+	t.Parallel()
+
+	repo := memory.New()
+	publisher := &fakePublisher{}
+
+	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "", time.Second); err == nil {
+		t.Fatal("expected error for empty lease owner")
+	}
+	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "owner", 0); err == nil {
+		t.Fatal("expected error for zero lease TTL")
 	}
 }

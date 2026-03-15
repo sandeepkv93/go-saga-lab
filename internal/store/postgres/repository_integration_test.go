@@ -113,25 +113,26 @@ func TestRepositoryCreateSagaInstanceWithOutbox(t *testing.T) {
 		t.Fatalf("CreateSagaInstanceWithOutbox() error = %v", err)
 	}
 
-	events, err := repo.ListDispatchableOutboxEvents(ctx, time.Now().UTC())
+	now := time.Now().UTC()
+	events, err := repo.ClaimDispatchableOutboxEvents(ctx, now, "test-owner", now.Add(time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) == 0 {
 		t.Fatal("expected at least one pending outbox event")
 	}
 
-	if err := repo.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "published", 1, nil); err != nil {
+	if err := repo.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "published", 1, nil, "test-owner"); err != nil {
 		t.Fatalf("UpdateOutboxEventDelivery() error = %v", err)
 	}
 
-	events, err = repo.ListDispatchableOutboxEvents(ctx, time.Now().UTC())
+	events, err = repo.ClaimDispatchableOutboxEvents(ctx, time.Now().UTC(), "test-owner", time.Now().UTC().Add(time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() after update error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() after update error = %v", err)
 	}
 	for _, gotEvent := range events {
 		if gotEvent.DedupeKey == event.DedupeKey {
-			t.Fatalf("expected dedupe key %q to be absent from dispatchable events", event.DedupeKey)
+			t.Fatalf("expected dedupe key %q to be absent from claimable events", event.DedupeKey)
 		}
 	}
 }

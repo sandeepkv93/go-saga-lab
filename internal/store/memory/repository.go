@@ -75,24 +75,42 @@ func (r *Repository) CreateSagaInstanceWithOutbox(_ context.Context, instance do
 	return nil
 }
 
-func (r *Repository) ListDispatchableOutboxEvents(_ context.Context, now time.Time) ([]domain.OutboxEvent, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (r *Repository) ClaimDispatchableOutboxEvents(_ context.Context, now time.Time, leaseOwner string, leaseUntil time.Time, limit int) ([]domain.OutboxEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if leaseOwner == "" {
+		return nil, errors.New("lease owner is required")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
 
 	events := make([]domain.OutboxEvent, 0, len(r.outboxEvents))
-	for _, event := range r.outboxEvents {
-		if event.Status == "pending" {
-			events = append(events, event)
+	for i := range r.outboxEvents {
+		event := &r.outboxEvents[i]
+		leasedElsewhere := event.LeaseUntil != nil && event.LeaseOwner != "" && event.LeaseOwner != leaseOwner && event.LeaseUntil.After(now)
+		if leasedElsewhere {
 			continue
 		}
-		if event.Status == "failed" && event.NextAttemptAt != nil && !event.NextAttemptAt.After(now) {
-			events = append(events, event)
+		dispatchable := event.Status == "pending" || (event.Status == "failed" && event.NextAttemptAt != nil && !event.NextAttemptAt.After(now))
+		if !dispatchable {
+			continue
+		}
+
+		event.LeaseOwner = leaseOwner
+		event.LeaseUntil = &leaseUntil
+		event.UpdatedAt = now
+		events = append(events, *event)
+		if len(events) == limit {
+			break
 		}
 	}
+
 	return events, nil
 }
 
-func (r *Repository) UpdateOutboxEventDelivery(_ context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time) error {
+func (r *Repository) UpdateOutboxEventDelivery(_ context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time, leaseOwner string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -100,10 +118,15 @@ func (r *Repository) UpdateOutboxEventDelivery(_ context.Context, dedupeKey stri
 		if r.outboxEvents[i].DedupeKey != dedupeKey {
 			continue
 		}
+		if leaseOwner != "" && r.outboxEvents[i].LeaseOwner != leaseOwner {
+			return errors.New("outbox event lease owner mismatch")
+		}
 		r.outboxEvents[i].Status = status
 		r.outboxEvents[i].Attempts = attempts
 		r.outboxEvents[i].UpdatedAt = time.Now().UTC()
 		r.outboxEvents[i].NextAttemptAt = nextAttemptAt
+		r.outboxEvents[i].LeaseOwner = ""
+		r.outboxEvents[i].LeaseUntil = nil
 		return nil
 	}
 

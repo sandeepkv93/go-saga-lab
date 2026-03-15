@@ -21,6 +21,8 @@ type Config struct {
 	AMQPRoutingKeyPrefix  string
 	PublisherRetryBase    time.Duration
 	PublisherRetryMax     time.Duration
+	PublisherLeaseTTL     time.Duration
+	PublisherLeaseOwner   string
 }
 
 func Load() Config {
@@ -39,6 +41,8 @@ func Load() Config {
 		AMQPRoutingKeyPrefix:  getEnv("AMQP_ROUTING_KEY_PREFIX", "saga"),
 		PublisherRetryBase:    getEnvDurationFromMilliseconds("PUBLISHER_RETRY_BASE_MS", 1000),
 		PublisherRetryMax:     getEnvDurationFromMilliseconds("PUBLISHER_RETRY_MAX_MS", 30000),
+		PublisherLeaseTTL:     getEnvDurationFromMilliseconds("PUBLISHER_LEASE_TTL_MS", 10000),
+		PublisherLeaseOwner:   getEnv("PUBLISHER_LEASE_OWNER", hostnameOrFallback()),
 	}
 
 	if cfg.DatabaseURL != "" && cfg.StorageBackend == "memory" {
@@ -81,4 +85,12 @@ func getEnvBool(key string, fallback bool) bool {
 	}
 
 	return parsed
+}
+
+func hostnameOrFallback() string {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		return "publisher-default"
+	}
+	return hostname
 }

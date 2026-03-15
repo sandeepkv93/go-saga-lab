@@ -147,9 +147,11 @@ func (r *Repository) CreateSagaInstanceWithOutbox(ctx context.Context, instance 
 			status,
 			attempts,
 			next_attempt_at,
+			lease_owner,
+			lease_until,
 			created_at,
 			updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	if _, err := tx.Exec(
 		ctx,
@@ -162,6 +164,8 @@ func (r *Repository) CreateSagaInstanceWithOutbox(ctx context.Context, instance 
 		event.Status,
 		event.Attempts,
 		event.NextAttemptAt,
+		event.LeaseOwner,
+		event.LeaseUntil,
 		event.CreatedAt,
 		event.UpdatedAt,
 	); err != nil {
@@ -245,32 +249,56 @@ func (r *Repository) UpdateSagaStatus(ctx context.Context, id string, status dom
 	return nil
 }
 
-func (r *Repository) ListDispatchableOutboxEvents(ctx context.Context, now time.Time) ([]domain.OutboxEvent, error) {
+func (r *Repository) ClaimDispatchableOutboxEvents(ctx context.Context, now time.Time, leaseOwner string, leaseUntil time.Time, limit int) ([]domain.OutboxEvent, error) {
 	if r == nil || r.pool == nil {
 		return nil, errors.New("repository is not initialized")
 	}
+	if leaseOwner == "" {
+		return nil, errors.New("lease owner is required")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
 
 	const query = `
-		SELECT
-			aggregate_type,
-			aggregate_id,
-			event_type,
-			payload_json,
-			dedupe_key,
-			status,
-			attempts,
-			next_attempt_at,
-			created_at,
-			updated_at
-		FROM outbox_events
-		WHERE status = 'pending'
-		   OR (status = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= $1)
-		ORDER BY created_at ASC, dedupe_key ASC
+		WITH candidates AS (
+			SELECT dedupe_key
+			FROM outbox_events
+			WHERE (
+					status = 'pending'
+					OR (status = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= $1)
+				)
+				AND (
+					lease_until IS NULL
+					OR lease_until <= $1
+					OR lease_owner = $2
+				)
+			ORDER BY created_at ASC, dedupe_key ASC
+			LIMIT $4
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE outbox_events o
+		SET lease_owner = $2, lease_until = $3, updated_at = NOW()
+		FROM candidates c
+		WHERE o.dedupe_key = c.dedupe_key
+		RETURNING
+			o.aggregate_type,
+			o.aggregate_id,
+			o.event_type,
+			o.payload_json,
+			o.dedupe_key,
+			o.status,
+			o.attempts,
+			o.next_attempt_at,
+			o.lease_owner,
+			o.lease_until,
+			o.created_at,
+			o.updated_at
 	`
 
-	rows, err := r.pool.Query(ctx, query, now)
+	rows, err := r.pool.Query(ctx, query, now, leaseOwner, leaseUntil, limit)
 	if err != nil {
-		return nil, fmt.Errorf("query pending outbox events: %w", err)
+		return nil, fmt.Errorf("claim dispatchable outbox events: %w", err)
 	}
 	defer rows.Close()
 
@@ -286,6 +314,8 @@ func (r *Repository) ListDispatchableOutboxEvents(ctx context.Context, now time.
 			&event.Status,
 			&event.Attempts,
 			&event.NextAttemptAt,
+			&event.LeaseOwner,
+			&event.LeaseUntil,
 			&event.CreatedAt,
 			&event.UpdatedAt,
 		); err != nil {
@@ -300,7 +330,7 @@ func (r *Repository) ListDispatchableOutboxEvents(ctx context.Context, now time.
 	return events, nil
 }
 
-func (r *Repository) UpdateOutboxEventDelivery(ctx context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time) error {
+func (r *Repository) UpdateOutboxEventDelivery(ctx context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time, leaseOwner string) error {
 	if r == nil || r.pool == nil {
 		return errors.New("repository is not initialized")
 	}
@@ -313,11 +343,12 @@ func (r *Repository) UpdateOutboxEventDelivery(ctx context.Context, dedupeKey st
 
 	const query = `
 		UPDATE outbox_events
-		SET status = $2, attempts = $3, next_attempt_at = $4, updated_at = NOW()
+		SET status = $2, attempts = $3, next_attempt_at = $4, lease_owner = NULL, lease_until = NULL, updated_at = NOW()
 		WHERE dedupe_key = $1
+		  AND ($5 = '' OR lease_owner = $5)
 	`
 
-	tag, err := r.pool.Exec(ctx, query, dedupeKey, status, attempts, nextAttemptAt)
+	tag, err := r.pool.Exec(ctx, query, dedupeKey, status, attempts, nextAttemptAt, leaseOwner)
 	if err != nil {
 		return fmt.Errorf("update outbox event status: %w", err)
 	}

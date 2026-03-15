@@ -48,6 +48,8 @@ type OutboxEvent struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	NextAttemptAt *time.Time
+	LeaseOwner    string
+	LeaseUntil    *time.Time
 }
 
 func (s SagaStatus) Valid() bool {

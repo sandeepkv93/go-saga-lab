@@ -16,6 +16,6 @@ type SagaRepository interface {
 type SagaOutboxRepository interface {
 	SagaRepository
 	CreateSagaInstanceWithOutbox(ctx context.Context, instance domain.SagaInstance, event domain.OutboxEvent) error
-	ListDispatchableOutboxEvents(ctx context.Context, now time.Time) ([]domain.OutboxEvent, error)
-	UpdateOutboxEventDelivery(ctx context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time) error
+	ClaimDispatchableOutboxEvents(ctx context.Context, now time.Time, leaseOwner string, leaseUntil time.Time, limit int) ([]domain.OutboxEvent, error)
+	UpdateOutboxEventDelivery(ctx context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time, leaseOwner string) error
 }

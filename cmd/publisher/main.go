@@ -36,7 +36,14 @@ func main() {
 		defer cleanupPublisher()
 	}
 
-	dispatcher, err := outbox.NewDispatcher(repository, publisher, cfg.PublisherRetryBase, cfg.PublisherRetryMax)
+	dispatcher, err := outbox.NewDispatcher(
+		repository,
+		publisher,
+		cfg.PublisherRetryBase,
+		cfg.PublisherRetryMax,
+		cfg.PublisherLeaseOwner,
+		cfg.PublisherLeaseTTL,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,11 +53,13 @@ func main() {
 	}
 
 	log.Printf(
-		"go-saga-lab publisher starting backend=%s poll_interval=%s retry_base=%s retry_max=%s run_once=%t",
+		"go-saga-lab publisher starting backend=%s poll_interval=%s retry_base=%s retry_max=%s lease_owner=%s lease_ttl=%s run_once=%t",
 		cfg.PublisherBackend,
 		cfg.PublisherPollInterval,
 		cfg.PublisherRetryBase,
 		cfg.PublisherRetryMax,
+		cfg.PublisherLeaseOwner,
+		cfg.PublisherLeaseTTL,
 		cfg.PublisherRunOnce,
 	)
 	if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {

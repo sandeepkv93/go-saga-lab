@@ -37,7 +37,7 @@ func TestRunnerRunOnceDispatchesPendingEvents(t *testing.T) {
 		t.Fatalf("CreateSagaInstanceWithOutbox() error = %v", err)
 	}
 
-	dispatcher, err := NewDispatcher(repo, &fakePublisher{}, 100*time.Millisecond, time.Second)
+	dispatcher, err := NewDispatcher(repo, &fakePublisher{}, 100*time.Millisecond, time.Second, "publisher-a", time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -50,9 +50,9 @@ func TestRunnerRunOnceDispatchesPendingEvents(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	events, err := repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC())
+	events, err := repo.ClaimDispatchableOutboxEvents(context.Background(), time.Now().UTC(), "publisher-b", time.Now().UTC().Add(time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) != 0 {
 		t.Fatalf("len(events) = %d, want 0", len(events))

@@ -38,9 +38,9 @@ func TestCreateSagaInstanceWithOutbox(t *testing.T) {
 		t.Fatalf("CreateSagaInstanceWithOutbox() error = %v", err)
 	}
 
-	events, err := repo.ListDispatchableOutboxEvents(context.Background(), now)
+	events, err := repo.ClaimDispatchableOutboxEvents(context.Background(), now, "test-owner", now.Add(time.Second), 10)
 	if err != nil {
-		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
+		t.Fatalf("ClaimDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) != 1 {
 		t.Fatalf("len(events) = %d, want 1", len(events))
