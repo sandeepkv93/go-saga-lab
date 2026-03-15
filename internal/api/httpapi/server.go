@@ -23,6 +23,8 @@ type Server struct {
 	mux        *http.ServeMux
 }
 
+const traceIDHeader = "X-Trace-Id"
+
 type createSagaRequest struct {
 	TemplateID     string          `json:"template_id"`
 	IdempotencyKey string          `json:"idempotency_key"`
@@ -130,6 +132,8 @@ func (s *Server) createSaga(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	traceID := requestTraceID(r)
+	w.Header().Set(traceIDHeader, traceID)
 	instance := domain.SagaInstance{
 		ID:             newSagaID(),
 		TemplateID:     req.TemplateID,
@@ -144,8 +148,9 @@ func (s *Server) createSaga(w http.ResponseWriter, r *http.Request) {
 		AggregateType: "saga",
 		AggregateID:   instance.ID,
 		EventType:     "saga.created",
-		PayloadJSON:   mustMarshalJSON(map[string]any{"saga_id": instance.ID, "template_id": instance.TemplateID}),
+		PayloadJSON:   mustMarshalJSON(map[string]any{"saga_id": instance.ID, "template_id": instance.TemplateID, "trace_id": traceID}),
 		DedupeKey:     instance.IdempotencyKey + ":saga.created",
+		TraceID:       traceID,
 		Status:        "pending",
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -290,6 +295,21 @@ func newSagaID() string {
 		panic(err)
 	}
 	return "saga_" + hex.EncodeToString(raw[:])
+}
+
+func requestTraceID(r *http.Request) string {
+	if traceID := strings.TrimSpace(r.Header.Get(traceIDHeader)); traceID != "" {
+		return traceID
+	}
+	return "trace_" + randomHex(8)
+}
+
+func randomHex(n int) string {
+	raw := make([]byte, n)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(raw)
 }
 
 func mustMarshalJSON(payload any) []byte {

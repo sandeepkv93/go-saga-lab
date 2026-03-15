@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -321,6 +322,7 @@ func (r *Repository) ClaimDispatchableOutboxEvents(ctx context.Context, now time
 		); err != nil {
 			return nil, fmt.Errorf("scan outbox event: %w", err)
 		}
+		event.TraceID = traceIDFromPayload(event.PayloadJSON)
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {
@@ -357,4 +359,14 @@ func (r *Repository) UpdateOutboxEventDelivery(ctx context.Context, dedupeKey st
 	}
 
 	return nil
+}
+
+func traceIDFromPayload(payload []byte) string {
+	var body struct {
+		TraceID string `json:"trace_id"`
+	}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return ""
+	}
+	return body.TraceID
 }

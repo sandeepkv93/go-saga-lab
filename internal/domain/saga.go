@@ -43,6 +43,7 @@ type OutboxEvent struct {
 	EventType     string
 	PayloadJSON   []byte
 	DedupeKey     string
+	TraceID       string
 	Status        string
 	Attempts      int
 	CreatedAt     time.Time

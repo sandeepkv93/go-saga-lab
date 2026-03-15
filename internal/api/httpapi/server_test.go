@@ -36,6 +36,9 @@ func TestCreateAndGetSaga(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST /v1/sagas status = %d, want %d", rec.Code, http.StatusCreated)
 	}
+	if rec.Header().Get(traceIDHeader) == "" {
+		t.Fatal("expected trace header in response")
+	}
 
 	var created sagaResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
@@ -80,6 +83,23 @@ func TestStartSaga(t *testing.T) {
 	}
 	if started.Status != "running" {
 		t.Fatalf("started.Status = %q, want %q", started.Status, "running")
+	}
+}
+
+func TestCreateSagaPreservesProvidedTraceID(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer(t)
+
+	body := bytes.NewBufferString(`{"template_id":"order-flow","idempotency_key":"idem-trace-1","input":{"order_id":"o-trace-1"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/sagas", body)
+	req.Header.Set(traceIDHeader, "trace-user-supplied")
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Header().Get(traceIDHeader) != "trace-user-supplied" {
+		t.Fatalf("trace header = %q, want %q", rec.Header().Get(traceIDHeader), "trace-user-supplied")
 	}
 }
 

@@ -92,6 +92,7 @@ func TestRabbitMQPublisherPublish(t *testing.T) {
 		EventType:     "created",
 		PayloadJSON:   []byte(`{"saga_id":"saga-1"}`),
 		DedupeKey:     "dedupe-1",
+		TraceID:       "trace-1",
 	}
 	if err := publisher.Publish(context.Background(), event); err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -106,6 +107,9 @@ func TestRabbitMQPublisherPublish(t *testing.T) {
 	if channel.message.MessageId != "dedupe-1" {
 		t.Fatalf("MessageId = %q, want %q", channel.message.MessageId, "dedupe-1")
 	}
+	if channel.message.Headers["trace_id"] != "trace-1" {
+		t.Fatalf("Headers[trace_id] = %v, want %q", channel.message.Headers["trace_id"], "trace-1")
+	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(channel.message.Body, &payload); err != nil {
@@ -113,6 +117,9 @@ func TestRabbitMQPublisherPublish(t *testing.T) {
 	}
 	if payload["event_type"] != "created" {
 		t.Fatalf("payload[event_type] = %v, want %q", payload["event_type"], "created")
+	}
+	if payload["trace_id"] != "trace-1" {
+		t.Fatalf("payload[trace_id] = %v, want %q", payload["trace_id"], "trace-1")
 	}
 }
 

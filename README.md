@@ -87,7 +87,7 @@ Implemented now:
 
 Not implemented yet:
 - concurrent step execution
-- telemetry dashboards and trace propagation
+- telemetry dashboards
 
 ## Project structure
 
@@ -239,6 +239,7 @@ Current outbox event flow:
 - dispatcher claims eligible events with a lease owner and lease TTL, then invokes a publisher implementation
 - successful publish marks the row `published`
 - failed publish marks the row `failed`, increments attempt count, and schedules `next_attempt_at` with exponential backoff
+- trace IDs flow from API ingress into outbox payloads, publisher logs, and RabbitMQ message headers
 
 Current publisher backends:
 - `log`: emits publish events to process logs

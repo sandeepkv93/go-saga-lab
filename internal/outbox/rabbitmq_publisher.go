@@ -101,6 +101,7 @@ func (p *RabbitMQPublisher) Publish(ctx context.Context, event domain.OutboxEven
 		"aggregate_id":   event.AggregateID,
 		"event_type":     event.EventType,
 		"dedupe_key":     event.DedupeKey,
+		"trace_id":       event.TraceID,
 		"payload":        json.RawMessage(event.PayloadJSON),
 	})
 	if err != nil {
@@ -119,7 +120,10 @@ func (p *RabbitMQPublisher) Publish(ctx context.Context, event domain.OutboxEven
 			DeliveryMode: amqp.Persistent,
 			Type:         event.EventType,
 			MessageId:    event.DedupeKey,
-			Body:         body,
+			Headers: amqp.Table{
+				"trace_id": event.TraceID,
+			},
+			Body: body,
 		},
 	); err != nil {
 		return fmt.Errorf("publish rabbitmq message: %w", err)

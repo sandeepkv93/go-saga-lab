@@ -11,11 +11,12 @@ type LogPublisher struct{}
 
 func (p *LogPublisher) Publish(_ context.Context, event domain.OutboxEvent) error {
 	log.Printf(
-		"published outbox event aggregate_type=%s aggregate_id=%s event_type=%s dedupe_key=%s",
+		"published outbox event aggregate_type=%s aggregate_id=%s event_type=%s dedupe_key=%s trace_id=%s",
 		event.AggregateType,
 		event.AggregateID,
 		event.EventType,
 		event.DedupeKey,
+		event.TraceID,
 	)
 	return nil
 }
