@@ -86,7 +86,7 @@ Implemented now:
 - outbox dispatcher and publisher process with success/failure status updates
 
 Not implemented yet:
-- worker lease model, timeout engine, or concurrent step execution
+- concurrent step execution
 - telemetry dashboards and trace propagation
 
 ## Project structure
@@ -247,6 +247,7 @@ Current publisher backends:
 Current limitation:
 - failed events do not yet store failure reason
 - there is no heartbeat or lease renewal flow for long-running publish attempts
+- there is no timeout engine for saga step execution itself, only for outbox publish attempts
 
 ## Publisher transport variables
 
@@ -268,6 +269,7 @@ Current limitation:
 - `PUBLISHER_RETRY_MAX_MS` (default `30000`)
 - `PUBLISHER_LEASE_TTL_MS` (default `10000`)
 - `PUBLISHER_LEASE_OWNER` (default hostname-based value)
+- `PUBLISHER_TIMEOUT_MS` (default `5000`)
 - `PUBLISHER_RUN_ONCE` (default `false`)
 
 ## Troubleshooting

@@ -13,9 +13,14 @@ import (
 type fakePublisher struct {
 	failDedupeKey string
 	published     []string
+	block         bool
 }
 
-func (p *fakePublisher) Publish(_ context.Context, event domain.OutboxEvent) error {
+func (p *fakePublisher) Publish(ctx context.Context, event domain.OutboxEvent) error {
+	if p.block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	if event.DedupeKey == p.failDedupeKey {
 		return errors.New("publish failed")
 	}
@@ -52,7 +57,7 @@ func TestDispatcherPublishesPendingEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{}
-	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", time.Second)
+	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", time.Second, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -103,7 +108,7 @@ func TestDispatcherMarksFailedEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{failDedupeKey: event.DedupeKey}
-	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", 200*time.Millisecond)
+	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", 200*time.Millisecond, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -139,10 +144,63 @@ func TestDispatcherRequiresLeaseSettings(t *testing.T) {
 	repo := memory.New()
 	publisher := &fakePublisher{}
 
-	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "", time.Second); err == nil {
+	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "", time.Second, time.Second); err == nil {
 		t.Fatal("expected error for empty lease owner")
 	}
-	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "owner", 0); err == nil {
+	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "owner", 0, time.Second); err == nil {
 		t.Fatal("expected error for zero lease TTL")
+	}
+	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "owner", time.Second, 0); err == nil {
+		t.Fatal("expected error for zero timeout")
+	}
+}
+
+func TestDispatcherTimesOutBlockedPublish(t *testing.T) {
+	t.Parallel()
+
+	repo := memory.New()
+	now := time.Now().UTC()
+	instance := domain.SagaInstance{
+		ID:             "saga-dispatch-timeout-1",
+		TemplateID:     "order-flow",
+		Status:         domain.SagaStatusCreated,
+		InputJSON:      []byte(`{}`),
+		IdempotencyKey: "idem-dispatch-timeout-1",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	event := domain.OutboxEvent{
+		AggregateType: "saga",
+		AggregateID:   instance.ID,
+		EventType:     "saga.created",
+		PayloadJSON:   []byte(`{"saga_id":"saga-dispatch-timeout-1"}`),
+		DedupeKey:     "idem-dispatch-timeout-1:saga.created",
+		Status:        "pending",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := repo.CreateSagaInstanceWithOutbox(context.Background(), instance, event); err != nil {
+		t.Fatalf("CreateSagaInstanceWithOutbox() error = %v", err)
+	}
+
+	dispatcher, err := NewDispatcher(repo, &fakePublisher{block: true}, 100*time.Millisecond, time.Second, "publisher-a", time.Second, 20*time.Millisecond)
+	if err != nil {
+		t.Fatalf("NewDispatcher() error = %v", err)
+	}
+
+	dispatched, err := dispatcher.DispatchPending(context.Background())
+	if err != nil {
+		t.Fatalf("DispatchPending() error = %v", err)
+	}
+	if dispatched != 0 {
+		t.Fatalf("DispatchPending() = %d, want %d", dispatched, 0)
+	}
+
+	events, err := repo.ClaimDispatchableOutboxEvents(context.Background(), time.Now().UTC(), "publisher-b", time.Now().UTC().Add(time.Second), 10)
+	if err != nil {
+		t.Fatalf("ClaimDispatchableOutboxEvents() error = %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("len(events) = %d, want 0 immediately after timeout scheduling", len(events))
 	}
 }

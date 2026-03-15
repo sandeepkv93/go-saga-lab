@@ -20,9 +20,10 @@ type Dispatcher struct {
 	retryMax   time.Duration
 	leaseOwner string
 	leaseTTL   time.Duration
+	timeout    time.Duration
 }
 
-func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, retryBase, retryMax time.Duration, leaseOwner string, leaseTTL time.Duration) (*Dispatcher, error) {
+func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, retryBase, retryMax time.Duration, leaseOwner string, leaseTTL, timeout time.Duration) (*Dispatcher, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("repository is required")
 	}
@@ -41,6 +42,9 @@ func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, r
 	if leaseTTL <= 0 {
 		return nil, fmt.Errorf("lease TTL must be positive")
 	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("publish timeout must be positive")
+	}
 
 	return &Dispatcher{
 		repository: repository,
@@ -49,6 +53,7 @@ func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, r
 		retryMax:   retryMax,
 		leaseOwner: leaseOwner,
 		leaseTTL:   leaseTTL,
+		timeout:    timeout,
 	}, nil
 }
 
@@ -62,7 +67,10 @@ func (d *Dispatcher) DispatchPending(ctx context.Context) (int, error) {
 	dispatched := 0
 	for _, event := range events {
 		nextAttempts := event.Attempts + 1
-		if err := d.publisher.Publish(ctx, event); err != nil {
+		publishCtx, cancel := context.WithTimeout(ctx, d.timeout)
+		err := d.publisher.Publish(publishCtx, event)
+		cancel()
+		if err != nil {
 			nextAttemptAt := d.nextRetryAt(now, nextAttempts)
 			if markErr := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "failed", nextAttempts, &nextAttemptAt, d.leaseOwner); markErr != nil {
 				return dispatched, fmt.Errorf("schedule failed outbox event retry: %w", markErr)

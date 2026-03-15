@@ -23,6 +23,7 @@ type Config struct {
 	PublisherRetryMax     time.Duration
 	PublisherLeaseTTL     time.Duration
 	PublisherLeaseOwner   string
+	PublisherTimeout      time.Duration
 }
 
 func Load() Config {
@@ -43,6 +44,7 @@ func Load() Config {
 		PublisherRetryMax:     getEnvDurationFromMilliseconds("PUBLISHER_RETRY_MAX_MS", 30000),
 		PublisherLeaseTTL:     getEnvDurationFromMilliseconds("PUBLISHER_LEASE_TTL_MS", 10000),
 		PublisherLeaseOwner:   getEnv("PUBLISHER_LEASE_OWNER", hostnameOrFallback()),
+		PublisherTimeout:      getEnvDurationFromMilliseconds("PUBLISHER_TIMEOUT_MS", 5000),
 	}
 
 	if cfg.DatabaseURL != "" && cfg.StorageBackend == "memory" {
