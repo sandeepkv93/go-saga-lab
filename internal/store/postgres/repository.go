@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -145,9 +146,10 @@ func (r *Repository) CreateSagaInstanceWithOutbox(ctx context.Context, instance 
 			dedupe_key,
 			status,
 			attempts,
+			next_attempt_at,
 			created_at,
 			updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 	if _, err := tx.Exec(
 		ctx,
@@ -159,6 +161,7 @@ func (r *Repository) CreateSagaInstanceWithOutbox(ctx context.Context, instance 
 		event.DedupeKey,
 		event.Status,
 		event.Attempts,
+		event.NextAttemptAt,
 		event.CreatedAt,
 		event.UpdatedAt,
 	); err != nil {
@@ -242,7 +245,7 @@ func (r *Repository) UpdateSagaStatus(ctx context.Context, id string, status dom
 	return nil
 }
 
-func (r *Repository) ListPendingOutboxEvents(ctx context.Context) ([]domain.OutboxEvent, error) {
+func (r *Repository) ListDispatchableOutboxEvents(ctx context.Context, now time.Time) ([]domain.OutboxEvent, error) {
 	if r == nil || r.pool == nil {
 		return nil, errors.New("repository is not initialized")
 	}
@@ -256,14 +259,16 @@ func (r *Repository) ListPendingOutboxEvents(ctx context.Context) ([]domain.Outb
 			dedupe_key,
 			status,
 			attempts,
+			next_attempt_at,
 			created_at,
 			updated_at
 		FROM outbox_events
 		WHERE status = 'pending'
-		ORDER BY created_at ASC
+		   OR (status = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= $1)
+		ORDER BY created_at ASC, dedupe_key ASC
 	`
 
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.pool.Query(ctx, query, now)
 	if err != nil {
 		return nil, fmt.Errorf("query pending outbox events: %w", err)
 	}
@@ -280,6 +285,7 @@ func (r *Repository) ListPendingOutboxEvents(ctx context.Context) ([]domain.Outb
 			&event.DedupeKey,
 			&event.Status,
 			&event.Attempts,
+			&event.NextAttemptAt,
 			&event.CreatedAt,
 			&event.UpdatedAt,
 		); err != nil {
@@ -294,7 +300,7 @@ func (r *Repository) ListPendingOutboxEvents(ctx context.Context) ([]domain.Outb
 	return events, nil
 }
 
-func (r *Repository) MarkOutboxEventStatus(ctx context.Context, dedupeKey string, status string, attempts int) error {
+func (r *Repository) UpdateOutboxEventDelivery(ctx context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time) error {
 	if r == nil || r.pool == nil {
 		return errors.New("repository is not initialized")
 	}
@@ -307,11 +313,11 @@ func (r *Repository) MarkOutboxEventStatus(ctx context.Context, dedupeKey string
 
 	const query = `
 		UPDATE outbox_events
-		SET status = $2, attempts = $3, updated_at = NOW()
+		SET status = $2, attempts = $3, next_attempt_at = $4, updated_at = NOW()
 		WHERE dedupe_key = $1
 	`
 
-	tag, err := r.pool.Exec(ctx, query, dedupeKey, status, attempts)
+	tag, err := r.pool.Exec(ctx, query, dedupeKey, status, attempts, nextAttemptAt)
 	if err != nil {
 		return fmt.Errorf("update outbox event status: %w", err)
 	}

@@ -52,7 +52,7 @@ func TestDispatcherPublishesPendingEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{}
-	dispatcher, err := NewDispatcher(repo, publisher)
+	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -65,9 +65,9 @@ func TestDispatcherPublishesPendingEvents(t *testing.T) {
 		t.Fatalf("DispatchPending() = %d, want %d", dispatched, 1)
 	}
 
-	events, err := repo.ListPendingOutboxEvents(context.Background())
+	events, err := repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC())
 	if err != nil {
-		t.Fatalf("ListPendingOutboxEvents() error = %v", err)
+		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) != 0 {
 		t.Fatalf("len(events) = %d, want 0", len(events))
@@ -103,7 +103,7 @@ func TestDispatcherMarksFailedEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{failDedupeKey: event.DedupeKey}
-	dispatcher, err := NewDispatcher(repo, publisher)
+	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -116,11 +116,19 @@ func TestDispatcherMarksFailedEvents(t *testing.T) {
 		t.Fatalf("DispatchPending() = %d, want %d", dispatched, 0)
 	}
 
-	events, err := repo.ListPendingOutboxEvents(context.Background())
+	events, err := repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC())
 	if err != nil {
-		t.Fatalf("ListPendingOutboxEvents() error = %v", err)
+		t.Fatalf("ListDispatchableOutboxEvents() error = %v", err)
 	}
 	if len(events) != 0 {
-		t.Fatalf("len(events) = %d, want 0 because failed events should leave pending queue", len(events))
+		t.Fatalf("len(events) = %d, want 0 because failed events should not be immediately dispatchable", len(events))
+	}
+
+	events, err = repo.ListDispatchableOutboxEvents(context.Background(), time.Now().UTC().Add(time.Second))
+	if err != nil {
+		t.Fatalf("ListDispatchableOutboxEvents() after delay error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) after delay = %d, want 1", len(events))
 	}
 }

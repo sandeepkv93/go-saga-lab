@@ -239,15 +239,15 @@ Current outbox event flow:
 - `cmd/publisher` runs the dispatcher loop
 - dispatcher loads pending events and invokes a publisher implementation
 - successful publish marks the row `published`
-- failed publish marks the row `failed` and increments attempt count
+- failed publish marks the row `failed`, increments attempt count, and schedules `next_attempt_at` with exponential backoff
 
 Current publisher backends:
 - `log`: emits publish events to process logs
 - `rabbitmq`: declares exchange + demo queue binding and publishes JSON messages to the configured exchange
 
 Current limitation:
-- failed events do not yet store failure reason or retry schedule
-- there is no delayed retry/backoff worker for failed rows
+- failed events do not yet store failure reason
+- there is no lease-based publisher coordination for multi-instance dispatch
 
 ## Publisher transport variables
 
@@ -265,6 +265,8 @@ Current limitation:
 - `DATABASE_URL` (optional; enables Postgres when set)
 - `MIGRATIONS_DIR` (default `migrations`)
 - `PUBLISHER_POLL_INTERVAL_MS` (default `2000`)
+- `PUBLISHER_RETRY_BASE_MS` (default `1000`)
+- `PUBLISHER_RETRY_MAX_MS` (default `30000`)
 - `PUBLISHER_RUN_ONCE` (default `false`)
 
 ## Troubleshooting

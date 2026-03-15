@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/sandeepkv93/go-saga-lab/internal/domain"
 )
@@ -15,6 +16,6 @@ type SagaRepository interface {
 type SagaOutboxRepository interface {
 	SagaRepository
 	CreateSagaInstanceWithOutbox(ctx context.Context, instance domain.SagaInstance, event domain.OutboxEvent) error
-	ListPendingOutboxEvents(ctx context.Context) ([]domain.OutboxEvent, error)
-	MarkOutboxEventStatus(ctx context.Context, dedupeKey string, status string, attempts int) error
+	ListDispatchableOutboxEvents(ctx context.Context, now time.Time) ([]domain.OutboxEvent, error)
+	UpdateOutboxEventDelivery(ctx context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time) error
 }

@@ -19,6 +19,8 @@ type Config struct {
 	AMQPExchangeType      string
 	AMQPQueue             string
 	AMQPRoutingKeyPrefix  string
+	PublisherRetryBase    time.Duration
+	PublisherRetryMax     time.Duration
 }
 
 func Load() Config {
@@ -35,6 +37,8 @@ func Load() Config {
 		AMQPExchangeType:      getEnv("AMQP_EXCHANGE_TYPE", "topic"),
 		AMQPQueue:             getEnv("AMQP_QUEUE", "go_saga_lab.events.demo"),
 		AMQPRoutingKeyPrefix:  getEnv("AMQP_ROUTING_KEY_PREFIX", "saga"),
+		PublisherRetryBase:    getEnvDurationFromMilliseconds("PUBLISHER_RETRY_BASE_MS", 1000),
+		PublisherRetryMax:     getEnvDurationFromMilliseconds("PUBLISHER_RETRY_MAX_MS", 30000),
 	}
 
 	if cfg.DatabaseURL != "" && cfg.StorageBackend == "memory" {

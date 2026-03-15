@@ -75,7 +75,7 @@ func (r *Repository) CreateSagaInstanceWithOutbox(_ context.Context, instance do
 	return nil
 }
 
-func (r *Repository) ListPendingOutboxEvents(_ context.Context) ([]domain.OutboxEvent, error) {
+func (r *Repository) ListDispatchableOutboxEvents(_ context.Context, now time.Time) ([]domain.OutboxEvent, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -83,12 +83,16 @@ func (r *Repository) ListPendingOutboxEvents(_ context.Context) ([]domain.Outbox
 	for _, event := range r.outboxEvents {
 		if event.Status == "pending" {
 			events = append(events, event)
+			continue
+		}
+		if event.Status == "failed" && event.NextAttemptAt != nil && !event.NextAttemptAt.After(now) {
+			events = append(events, event)
 		}
 	}
 	return events, nil
 }
 
-func (r *Repository) MarkOutboxEventStatus(_ context.Context, dedupeKey string, status string, attempts int) error {
+func (r *Repository) UpdateOutboxEventDelivery(_ context.Context, dedupeKey string, status string, attempts int, nextAttemptAt *time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -99,6 +103,7 @@ func (r *Repository) MarkOutboxEventStatus(_ context.Context, dedupeKey string, 
 		r.outboxEvents[i].Status = status
 		r.outboxEvents[i].Attempts = attempts
 		r.outboxEvents[i].UpdatedAt = time.Now().UTC()
+		r.outboxEvents[i].NextAttemptAt = nextAttemptAt
 		return nil
 	}
 

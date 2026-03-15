@@ -47,6 +47,7 @@ type OutboxEvent struct {
 	Attempts      int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	NextAttemptAt *time.Time
 }
 
 func (s SagaStatus) Valid() bool {
