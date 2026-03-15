@@ -84,9 +84,7 @@ Implemented now:
 - built-in migration runner for PostgreSQL startup
 - atomic saga + outbox write on creation for Postgres
 - outbox dispatcher and publisher process with success/failure status updates
-
-Not implemented yet:
-- concurrent step execution
+- reference concurrent branch execution coordinator in `internal/orchestrator/runtime`
 
 ## Project structure
 
@@ -258,6 +256,7 @@ Current limitation:
 - failed events do not yet store failure reason
 - there is no heartbeat or lease renewal flow for long-running publish attempts
 - there is no timeout engine for saga step execution itself, only for outbox publish attempts
+- concurrent execution is currently a reference runtime coordinator, not a persisted workflow DAG
 
 ## Publisher transport variables
 

@@ -27,6 +27,15 @@ const (
 	EventCancel            SagaEvent = "cancel"
 )
 
+type StepExecutionStatus string
+
+const (
+	StepStatusPending    StepExecutionStatus = "pending"
+	StepStatusInProgress StepExecutionStatus = "in_progress"
+	StepStatusSucceeded  StepExecutionStatus = "succeeded"
+	StepStatusFailed     StepExecutionStatus = "failed"
+)
+
 type SagaInstance struct {
 	ID             string
 	TemplateID     string
