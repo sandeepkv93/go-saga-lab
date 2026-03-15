@@ -13,6 +13,7 @@ import (
 	"github.com/sandeepkv93/go-saga-lab/internal/store"
 	"github.com/sandeepkv93/go-saga-lab/internal/store/memory"
 	"github.com/sandeepkv93/go-saga-lab/internal/store/postgres"
+	"github.com/sandeepkv93/go-saga-lab/internal/telemetry"
 )
 
 func main() {
@@ -39,6 +40,7 @@ func main() {
 	dispatcher, err := outbox.NewDispatcher(
 		repository,
 		publisher,
+		cfg.PublisherBackend,
 		cfg.PublisherRetryBase,
 		cfg.PublisherRetryMax,
 		cfg.PublisherLeaseOwner,
@@ -64,8 +66,18 @@ func main() {
 		cfg.PublisherTimeout,
 		cfg.PublisherRunOnce,
 	)
+	go servePublisherMetrics(cfg.PublisherMetricsAddr)
 	if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatal(err)
+	}
+}
+
+func servePublisherMetrics(addr string) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", telemetry.MetricsHandler())
+	log.Printf("go-saga-lab publisher metrics listening on %s", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("publisher metrics server stopped: %v", err)
 	}
 }
 

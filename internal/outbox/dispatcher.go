@@ -7,6 +7,7 @@ import (
 
 	"github.com/sandeepkv93/go-saga-lab/internal/domain"
 	"github.com/sandeepkv93/go-saga-lab/internal/store"
+	"github.com/sandeepkv93/go-saga-lab/internal/telemetry"
 )
 
 type Publisher interface {
@@ -16,6 +17,7 @@ type Publisher interface {
 type Dispatcher struct {
 	repository store.SagaOutboxRepository
 	publisher  Publisher
+	backend    string
 	retryBase  time.Duration
 	retryMax   time.Duration
 	leaseOwner string
@@ -23,12 +25,15 @@ type Dispatcher struct {
 	timeout    time.Duration
 }
 
-func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, retryBase, retryMax time.Duration, leaseOwner string, leaseTTL, timeout time.Duration) (*Dispatcher, error) {
+func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, backend string, retryBase, retryMax time.Duration, leaseOwner string, leaseTTL, timeout time.Duration) (*Dispatcher, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("repository is required")
 	}
 	if publisher == nil {
 		return nil, fmt.Errorf("publisher is required")
+	}
+	if backend == "" {
+		return nil, fmt.Errorf("backend is required")
 	}
 	if retryBase <= 0 {
 		return nil, fmt.Errorf("retry base delay must be positive")
@@ -49,6 +54,7 @@ func NewDispatcher(repository store.SagaOutboxRepository, publisher Publisher, r
 	return &Dispatcher{
 		repository: repository,
 		publisher:  publisher,
+		backend:    backend,
 		retryBase:  retryBase,
 		retryMax:   retryMax,
 		leaseOwner: leaseOwner,
@@ -71,6 +77,7 @@ func (d *Dispatcher) DispatchPending(ctx context.Context) (int, error) {
 		err := d.publisher.Publish(publishCtx, event)
 		cancel()
 		if err != nil {
+			telemetry.RecordOutboxPublish(d.backend, event.EventType, "failed")
 			nextAttemptAt := d.nextRetryAt(now, nextAttempts)
 			if markErr := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "failed", nextAttempts, &nextAttemptAt, d.leaseOwner); markErr != nil {
 				return dispatched, fmt.Errorf("schedule failed outbox event retry: %w", markErr)
@@ -81,6 +88,7 @@ func (d *Dispatcher) DispatchPending(ctx context.Context) (int, error) {
 		if err := d.repository.UpdateOutboxEventDelivery(ctx, event.DedupeKey, "published", nextAttempts, nil, d.leaseOwner); err != nil {
 			return dispatched, fmt.Errorf("mark published outbox event: %w", err)
 		}
+		telemetry.RecordOutboxPublish(d.backend, event.EventType, "published")
 		dispatched++
 	}
 

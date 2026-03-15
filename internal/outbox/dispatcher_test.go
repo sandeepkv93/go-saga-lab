@@ -57,7 +57,7 @@ func TestDispatcherPublishesPendingEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{}
-	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", time.Second, time.Second)
+	dispatcher, err := NewDispatcher(repo, publisher, "test", 100*time.Millisecond, time.Second, "publisher-a", time.Second, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestDispatcherMarksFailedEvents(t *testing.T) {
 	}
 
 	publisher := &fakePublisher{failDedupeKey: event.DedupeKey}
-	dispatcher, err := NewDispatcher(repo, publisher, 100*time.Millisecond, time.Second, "publisher-a", 200*time.Millisecond, time.Second)
+	dispatcher, err := NewDispatcher(repo, publisher, "test", 100*time.Millisecond, time.Second, "publisher-a", 200*time.Millisecond, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}
@@ -144,14 +144,17 @@ func TestDispatcherRequiresLeaseSettings(t *testing.T) {
 	repo := memory.New()
 	publisher := &fakePublisher{}
 
-	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "", time.Second, time.Second); err == nil {
+	if _, err := NewDispatcher(repo, publisher, "test", time.Second, time.Second, "", time.Second, time.Second); err == nil {
 		t.Fatal("expected error for empty lease owner")
 	}
-	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "owner", 0, time.Second); err == nil {
+	if _, err := NewDispatcher(repo, publisher, "test", time.Second, time.Second, "owner", 0, time.Second); err == nil {
 		t.Fatal("expected error for zero lease TTL")
 	}
-	if _, err := NewDispatcher(repo, publisher, time.Second, time.Second, "owner", time.Second, 0); err == nil {
+	if _, err := NewDispatcher(repo, publisher, "test", time.Second, time.Second, "owner", time.Second, 0); err == nil {
 		t.Fatal("expected error for zero timeout")
+	}
+	if _, err := NewDispatcher(repo, publisher, "", time.Second, time.Second, "owner", time.Second, time.Second); err == nil {
+		t.Fatal("expected error for empty backend")
 	}
 }
 
@@ -183,7 +186,7 @@ func TestDispatcherTimesOutBlockedPublish(t *testing.T) {
 		t.Fatalf("CreateSagaInstanceWithOutbox() error = %v", err)
 	}
 
-	dispatcher, err := NewDispatcher(repo, &fakePublisher{block: true}, 100*time.Millisecond, time.Second, "publisher-a", time.Second, 20*time.Millisecond)
+	dispatcher, err := NewDispatcher(repo, &fakePublisher{block: true}, "test", 100*time.Millisecond, time.Second, "publisher-a", time.Second, 20*time.Millisecond)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}

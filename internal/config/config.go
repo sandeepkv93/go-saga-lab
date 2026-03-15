@@ -24,6 +24,7 @@ type Config struct {
 	PublisherLeaseTTL     time.Duration
 	PublisherLeaseOwner   string
 	PublisherTimeout      time.Duration
+	PublisherMetricsAddr  string
 }
 
 func Load() Config {
@@ -45,6 +46,7 @@ func Load() Config {
 		PublisherLeaseTTL:     getEnvDurationFromMilliseconds("PUBLISHER_LEASE_TTL_MS", 10000),
 		PublisherLeaseOwner:   getEnv("PUBLISHER_LEASE_OWNER", hostnameOrFallback()),
 		PublisherTimeout:      getEnvDurationFromMilliseconds("PUBLISHER_TIMEOUT_MS", 5000),
+		PublisherMetricsAddr:  getEnv("PUBLISHER_METRICS_ADDR", ":9091"),
 	}
 
 	if cfg.DatabaseURL != "" && cfg.StorageBackend == "memory" {

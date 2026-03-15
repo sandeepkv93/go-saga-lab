@@ -87,7 +87,6 @@ Implemented now:
 
 Not implemented yet:
 - concurrent step execution
-- telemetry dashboards
 
 ## Project structure
 
@@ -120,6 +119,10 @@ Run the publisher once against the selected backend:
 PUBLISHER_RUN_ONCE=true go run ./cmd/publisher
 ```
 
+Metrics endpoints:
+- API: `http://localhost:8080/metrics`
+- Publisher: `http://localhost:9091/metrics`
+
 ## Run with PostgreSQL
 
 1. Start dependencies:
@@ -140,6 +143,12 @@ Postgres startup behavior:
 - the app pings the database before serving traffic
 - the app applies all `*.up.sql` files from `MIGRATIONS_DIR` (default `migrations`)
 - saga creation writes `saga_instances` and `outbox_events` in one transaction
+
+Observability stack:
+- `docker compose up -d prometheus grafana`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+- provisioned dashboard: `go-saga-lab Overview`
 
 ## Storage mode matrix
 
@@ -271,6 +280,7 @@ Current limitation:
 - `PUBLISHER_LEASE_TTL_MS` (default `10000`)
 - `PUBLISHER_LEASE_OWNER` (default hostname-based value)
 - `PUBLISHER_TIMEOUT_MS` (default `5000`)
+- `PUBLISHER_METRICS_ADDR` (default `:9091`)
 - `PUBLISHER_RUN_ONCE` (default `false`)
 
 ## Troubleshooting

@@ -37,7 +37,7 @@ func TestRunnerRunOnceDispatchesPendingEvents(t *testing.T) {
 		t.Fatalf("CreateSagaInstanceWithOutbox() error = %v", err)
 	}
 
-	dispatcher, err := NewDispatcher(repo, &fakePublisher{}, 100*time.Millisecond, time.Second, "publisher-a", time.Second, time.Second)
+	dispatcher, err := NewDispatcher(repo, &fakePublisher{}, "test", 100*time.Millisecond, time.Second, "publisher-a", time.Second, time.Second)
 	if err != nil {
 		t.Fatalf("NewDispatcher() error = %v", err)
 	}

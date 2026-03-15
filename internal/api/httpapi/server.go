@@ -15,6 +15,7 @@ import (
 	"github.com/sandeepkv93/go-saga-lab/internal/orchestrator/runtime"
 	"github.com/sandeepkv93/go-saga-lab/internal/store"
 	pgstore "github.com/sandeepkv93/go-saga-lab/internal/store/postgres"
+	"github.com/sandeepkv93/go-saga-lab/internal/telemetry"
 )
 
 type Server struct {
@@ -67,14 +68,15 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	s.mux.HandleFunc("/healthz", telemetry.InstrumentHTTP("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{
 			"status":  "ok",
 			"service": "go-saga-lab-api",
 		})
-	})
-	s.mux.HandleFunc("/v1/sagas", s.handleSagas)
-	s.mux.HandleFunc("/v1/sagas/", s.handleSagaByID)
+	}))
+	s.mux.Handle("/metrics", telemetry.MetricsHandler())
+	s.mux.HandleFunc("/v1/sagas", telemetry.InstrumentHTTP("/v1/sagas", s.handleSagas))
+	s.mux.HandleFunc("/v1/sagas/", telemetry.InstrumentHTTP("/v1/sagas/:id", s.handleSagaByID))
 }
 
 func (s *Server) handleSagas(w http.ResponseWriter, r *http.Request) {
