@@ -11,6 +11,9 @@ type SagaRepository interface {
 	CreateSagaInstance(ctx context.Context, instance domain.SagaInstance) error
 	GetSagaInstance(ctx context.Context, id string) (domain.SagaInstance, error)
 	UpdateSagaStatus(ctx context.Context, id string, status domain.SagaStatus) error
+	CreateStepExecutions(ctx context.Context, sagaID string, steps []domain.StepExecution) error
+	ListStepExecutions(ctx context.Context, sagaID string) ([]domain.StepExecution, error)
+	UpdateStepExecution(ctx context.Context, sagaID, stepName string, status domain.StepExecutionStatus, attempts int, lastError string, finishedAt *time.Time) error
 }
 
 type SagaOutboxRepository interface {

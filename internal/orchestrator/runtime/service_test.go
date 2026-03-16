@@ -45,6 +45,18 @@ func (r *fakeSagaRepository) UpdateSagaStatus(_ context.Context, id string, stat
 	return nil
 }
 
+func (r *fakeSagaRepository) CreateStepExecutions(_ context.Context, _ string, _ []domain.StepExecution) error {
+	return nil
+}
+
+func (r *fakeSagaRepository) ListStepExecutions(_ context.Context, _ string) ([]domain.StepExecution, error) {
+	return nil, nil
+}
+
+func (r *fakeSagaRepository) UpdateStepExecution(_ context.Context, _ string, _ string, _ domain.StepExecutionStatus, _ int, _ string, _ *time.Time) error {
+	return nil
+}
+
 func TestNewServiceRequiresRepository(t *testing.T) {
 	t.Parallel()
 

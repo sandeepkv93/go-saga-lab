@@ -36,6 +36,18 @@ const (
 	StepStatusFailed     StepExecutionStatus = "failed"
 )
 
+type StepExecution struct {
+	SagaID     string
+	StepName   string
+	BranchName string
+	Status     StepExecutionStatus
+	Attempts   int
+	LastError  string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+	UpdatedAt  time.Time
+}
+
 type SagaInstance struct {
 	ID             string
 	TemplateID     string

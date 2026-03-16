@@ -250,6 +250,135 @@ func (r *Repository) UpdateSagaStatus(ctx context.Context, id string, status dom
 	return nil
 }
 
+func (r *Repository) CreateStepExecutions(ctx context.Context, sagaID string, steps []domain.StepExecution) error {
+	if r == nil || r.pool == nil {
+		return errors.New("repository is not initialized")
+	}
+	if sagaID == "" {
+		return errors.New("saga ID is required")
+	}
+
+	const query = `
+		INSERT INTO saga_step_executions (
+			saga_id,
+			step_name,
+			branch_name,
+			status,
+			attempts,
+			last_error,
+			started_at,
+			finished_at,
+			updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`
+
+	for _, step := range steps {
+		if step.StepName == "" {
+			return errors.New("step name is required")
+		}
+		if _, err := r.pool.Exec(
+			ctx,
+			query,
+			sagaID,
+			step.StepName,
+			step.BranchName,
+			step.Status,
+			step.Attempts,
+			step.LastError,
+			step.StartedAt,
+			step.FinishedAt,
+			step.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("insert saga step execution: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *Repository) ListStepExecutions(ctx context.Context, sagaID string) ([]domain.StepExecution, error) {
+	if r == nil || r.pool == nil {
+		return nil, errors.New("repository is not initialized")
+	}
+	if sagaID == "" {
+		return nil, errors.New("saga ID is required")
+	}
+
+	const query = `
+		SELECT
+			saga_id,
+			step_name,
+			branch_name,
+			status,
+			attempts,
+			last_error,
+			started_at,
+			finished_at,
+			updated_at
+		FROM saga_step_executions
+		WHERE saga_id = $1
+		ORDER BY branch_name ASC, step_name ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, sagaID)
+	if err != nil {
+		return nil, fmt.Errorf("query saga step executions: %w", err)
+	}
+	defer rows.Close()
+
+	var steps []domain.StepExecution
+	for rows.Next() {
+		var step domain.StepExecution
+		if err := rows.Scan(
+			&step.SagaID,
+			&step.StepName,
+			&step.BranchName,
+			&step.Status,
+			&step.Attempts,
+			&step.LastError,
+			&step.StartedAt,
+			&step.FinishedAt,
+			&step.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan saga step execution: %w", err)
+		}
+		steps = append(steps, step)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate saga step executions: %w", err)
+	}
+
+	return steps, nil
+}
+
+func (r *Repository) UpdateStepExecution(ctx context.Context, sagaID, stepName string, status domain.StepExecutionStatus, attempts int, lastError string, finishedAt *time.Time) error {
+	if r == nil || r.pool == nil {
+		return errors.New("repository is not initialized")
+	}
+	if sagaID == "" {
+		return errors.New("saga ID is required")
+	}
+	if stepName == "" {
+		return errors.New("step name is required")
+	}
+
+	const query = `
+		UPDATE saga_step_executions
+		SET status = $3, attempts = $4, last_error = $5, finished_at = $6, updated_at = NOW()
+		WHERE saga_id = $1 AND step_name = $2
+	`
+
+	tag, err := r.pool.Exec(ctx, query, sagaID, stepName, status, attempts, lastError, finishedAt)
+	if err != nil {
+		return fmt.Errorf("update saga step execution: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrSagaNotFound
+	}
+
+	return nil
+}
+
 func (r *Repository) ClaimDispatchableOutboxEvents(ctx context.Context, now time.Time, leaseOwner string, leaseUntil time.Time, limit int) ([]domain.OutboxEvent, error) {
 	if r == nil || r.pool == nil {
 		return nil, errors.New("repository is not initialized")

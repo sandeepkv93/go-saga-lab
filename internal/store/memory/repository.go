@@ -15,11 +15,13 @@ type Repository struct {
 	mu           sync.RWMutex
 	instances    map[string]domain.SagaInstance
 	outboxEvents []domain.OutboxEvent
+	stepRuns     map[string]map[string]domain.StepExecution
 }
 
 func New() *Repository {
 	return &Repository{
 		instances: make(map[string]domain.SagaInstance),
+		stepRuns:  make(map[string]map[string]domain.StepExecution),
 	}
 }
 
@@ -72,6 +74,72 @@ func (r *Repository) CreateSagaInstanceWithOutbox(_ context.Context, instance do
 
 	r.instances[instance.ID] = instance
 	r.outboxEvents = append(r.outboxEvents, event)
+	return nil
+}
+
+func (r *Repository) CreateStepExecutions(_ context.Context, sagaID string, steps []domain.StepExecution) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if sagaID == "" {
+		return errors.New("saga ID is required")
+	}
+	if _, exists := r.instances[sagaID]; !exists {
+		return ErrSagaNotFound
+	}
+	if _, exists := r.stepRuns[sagaID]; !exists {
+		r.stepRuns[sagaID] = make(map[string]domain.StepExecution)
+	}
+
+	for _, step := range steps {
+		if step.StepName == "" {
+			return errors.New("step name is required")
+		}
+		if _, exists := r.stepRuns[sagaID][step.StepName]; exists {
+			return errors.New("step execution already exists")
+		}
+		step.SagaID = sagaID
+		r.stepRuns[sagaID][step.StepName] = step
+	}
+
+	return nil
+}
+
+func (r *Repository) ListStepExecutions(_ context.Context, sagaID string) ([]domain.StepExecution, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	stepMap, ok := r.stepRuns[sagaID]
+	if !ok {
+		return nil, nil
+	}
+
+	steps := make([]domain.StepExecution, 0, len(stepMap))
+	for _, step := range stepMap {
+		steps = append(steps, step)
+	}
+	return steps, nil
+}
+
+func (r *Repository) UpdateStepExecution(_ context.Context, sagaID, stepName string, status domain.StepExecutionStatus, attempts int, lastError string, finishedAt *time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	stepMap, ok := r.stepRuns[sagaID]
+	if !ok {
+		return ErrSagaNotFound
+	}
+	step, ok := stepMap[stepName]
+	if !ok {
+		return ErrSagaNotFound
+	}
+
+	step.Status = status
+	step.Attempts = attempts
+	step.LastError = lastError
+	step.FinishedAt = finishedAt
+	step.UpdatedAt = time.Now().UTC()
+	stepMap[stepName] = step
 	return nil
 }
 

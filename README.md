@@ -85,6 +85,7 @@ Implemented now:
 - atomic saga + outbox write on creation for Postgres
 - outbox dispatcher and publisher process with success/failure status updates
 - reference concurrent branch execution coordinator in `internal/orchestrator/runtime`
+- persisted step execution records for branch progress and completion tracking
 
 ## Project structure
 
@@ -256,7 +257,7 @@ Current limitation:
 - failed events do not yet store failure reason
 - there is no heartbeat or lease renewal flow for long-running publish attempts
 - there is no timeout engine for saga step execution itself, only for outbox publish attempts
-- concurrent execution is currently a reference runtime coordinator, not a persisted workflow DAG
+- concurrent execution now has persisted step records, but not a full persisted workflow DAG or scheduler
 
 ## Publisher transport variables
 
